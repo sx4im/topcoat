@@ -9,6 +9,10 @@ use topcoat_core_grammar::common::paths::topcoat_runtime;
 pub(super) struct Js {
     source: String,
     parts: TokenStream,
+    /// How many generated immediately-invoked functions enclose the current
+    /// position. A `return`, `break`, or `continue` inside one of those
+    /// exits the generated function instead of the enclosing closure or loop.
+    synthetic: u32,
 }
 
 impl Js {
@@ -18,6 +22,35 @@ impl Js {
 
     pub(super) fn push(&mut self, character: char) {
         self.source.push(character);
+    }
+
+    /// Records entry into a generated immediately-invoked function.
+    pub(super) fn enter_synthetic(&mut self) {
+        self.synthetic += 1;
+    }
+
+    /// Records exit from a generated immediately-invoked function.
+    pub(super) fn exit_synthetic(&mut self) {
+        self.synthetic -= 1;
+    }
+
+    /// Whether the current position is inside a generated immediately-invoked
+    /// function.
+    #[must_use]
+    pub(super) fn in_synthetic(&self) -> bool {
+        self.synthetic > 0
+    }
+
+    /// Records entry into a real closure body, which is a fresh function
+    /// boundary. Returns the previous depth so it can be restored.
+    #[must_use]
+    pub(super) fn enter_function(&mut self) -> u32 {
+        std::mem::replace(&mut self.synthetic, 0)
+    }
+
+    /// Restores the depth saved by [`Js::enter_function`].
+    pub(super) fn exit_function(&mut self, saved: u32) {
+        self.synthetic = saved;
     }
 
     pub(super) fn expression(&mut self, ident: &Ident) {

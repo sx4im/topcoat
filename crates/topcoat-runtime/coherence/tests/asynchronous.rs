@@ -133,13 +133,13 @@ fn panics_before_during_and_after_await() {
 }
 
 #[test]
-fn known_control_flow_mismatches_after_await() {
+fn control_flow_after_await() {
     let condition = Awaitable::ready(true).after_yield();
-    coherent!(async known "return_inside_if" => {
+    coherent!(async => {
         if condition.await { return 1.0; }
         2.0
     });
-    coherent!(async known "break_inside_if" => {
+    coherent!(async => {
         loop {
             if condition.await { break; }
             break;
@@ -147,7 +147,7 @@ fn known_control_flow_mismatches_after_await() {
         3.0
     });
     let condition = Awaitable::ready(false).after_yield();
-    coherent!(async known "continue_inside_if" => {
+    coherent!(async => {
         let condition = condition.await;
         loop {
             if condition { continue; }
@@ -155,4 +155,21 @@ fn known_control_flow_mismatches_after_await() {
         }
         3.0
     });
+}
+
+#[test]
+fn early_return_after_await_inside_if() {
+    // An awaited call inside a conditional branch, followed by an early
+    // return, must stop the handler instead of falling through to the
+    // statements after the conditional.
+    for condition in [false, true] {
+        let side_effect = Awaitable::ready(()).after_yield();
+        coherent!(async => {
+            if condition {
+                side_effect.await;
+                return 1.0;
+            }
+            2.0
+        });
+    }
 }

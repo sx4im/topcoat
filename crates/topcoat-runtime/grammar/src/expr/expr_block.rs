@@ -21,7 +21,10 @@ impl Expr {
             "(() => "
         };
         js.push_str(predicate);
-        Self::block(&block.block, rust, js, names)?;
+        js.enter_synthetic();
+        let inner = Self::block(&block.block, rust, js, names, true);
+        js.exit_synthetic();
+        inner?;
         js.push_str(if is_async { ")())" } else { ")()" });
         Ok(())
     }

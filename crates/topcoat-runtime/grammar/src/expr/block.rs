@@ -6,13 +6,16 @@ use super::js::Js;
 use crate::expr::{Expr, name_resolver::NameResolver};
 
 impl Expr {
-    /// Lowers the contents of a `{ ... }` block. The trailing expression (a
-    /// statement without a semicolon) becomes the block's value.
+    /// Lowers the contents of a `{ ... }` block. When `value` is true, the
+    /// trailing expression (a statement without a semicolon) becomes the
+    /// block's value; otherwise it is a plain statement whose value is
+    /// discarded.
     pub(super) fn block(
         block: &Block,
         rust: &mut TokenStream,
         js: &mut Js,
         names: &mut NameResolver,
+        value: bool,
     ) -> syn::Result<()> {
         js.push_str("{ ");
         names.push_scope();
@@ -20,7 +23,7 @@ impl Expr {
         let mut stmts = TokenStream::new();
         let last = block.stmts.len().wrapping_sub(1);
         for (i, stmt) in block.stmts.iter().enumerate() {
-            Self::stmt(stmt, &mut stmts, js, names, i == last)?;
+            Self::stmt(stmt, &mut stmts, js, names, i == last, value)?;
         }
 
         names.pop_scope();

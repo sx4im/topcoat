@@ -42,6 +42,28 @@ fn blocks_and_shadowing() {
 }
 
 #[test]
+fn early_return_inside_block_statement() {
+    coherent!({
+        {
+            return 1.0;
+        }
+        2.0
+    });
+}
+
+#[test]
+fn statement_if_discards_branch_values() {
+    coherent!({
+        if true { 1.0 } else { 2.0 };
+        3.0
+    });
+    coherent!({
+        if false { 1.0 } else { 2.0 };
+        3.0
+    });
+}
+
+#[test]
 fn bounded_loops() {
     coherent!({
         while false {}

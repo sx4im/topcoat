@@ -184,14 +184,14 @@ async fn test_procedure(cx: &Cx, v: String) -> Result<String, std::convert::Infa
 }
 
 #[tokio::test]
-async fn procedure_call_inside_if_is_an_async_func() {
+async fn procedure_call_inside_if_is_awaited_in_the_handler() {
     let cx = &Cx::new();
     let html = view! {
         <button
             @click=$(async |_e| {
                 if true {
                     let _v = test_procedure("hello test".to_owned()).await;
-                }
+                };
             })
         >
             "Test"
@@ -203,20 +203,24 @@ async fn procedure_call_inside_if_is_an_async_func() {
     .render(cx);
 
     assert!(
-        html.contains("(await (async ()"),
-        "if block containing an await must be an async anonymous function: {html}"
+        html.contains("(await ("),
+        "await inside an if must reach the async handler: {html}"
+    );
+    assert!(
+        !html.contains("(await (async ()"),
+        "an if used as a statement must not wrap its await in an async function, or a return inside it would exit that function instead of the handler: {html}"
     );
 }
 
 #[tokio::test]
-async fn procedure_call_inside_block_is_an_async_func() {
+async fn procedure_call_inside_block_is_awaited_in_the_handler() {
     let cx = &Cx::new();
     let html = view! {
         <button
             @click=$(async |_e| {
                 {
                     let _v = test_procedure("hello test".to_owned()).await;
-                }
+                };
             })
         >
             "Test"
@@ -228,8 +232,12 @@ async fn procedure_call_inside_block_is_an_async_func() {
     .render(cx);
 
     assert!(
-        html.contains("(await (async ()"),
-        "block containing an await must be an async anonymous function: {html}"
+        html.contains("(await ("),
+        "await inside a block must reach the async handler: {html}"
+    );
+    assert!(
+        !html.contains("(await (async ()"),
+        "a block used as a statement must not wrap its await in an async function, or a return inside it would exit that function instead of the handler: {html}"
     );
 }
 

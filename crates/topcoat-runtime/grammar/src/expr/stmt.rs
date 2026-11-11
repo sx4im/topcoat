@@ -15,6 +15,7 @@ impl Expr {
         js: &mut Js,
         names: &mut NameResolver,
         is_last: bool,
+        block_value: bool,
     ) -> syn::Result<()> {
         match stmt {
             Stmt::Local(local) => {
@@ -42,13 +43,32 @@ impl Expr {
             Stmt::Expr(expr, semi) => {
                 // A trailing expression (no semicolon) is the block's value, so
                 // it becomes the JavaScript `return`.
-                let returns = is_last && semi.is_none();
+                let returns = is_last && semi.is_none() && block_value;
                 if returns {
                     js.push_str("return ");
                 }
 
                 let mut value = TokenStream::new();
-                Self::dispatch(expr, &mut value, js, names)?;
+                match expr {
+                    // A conditional or block used as a statement has no value
+                    // to produce, so it is emitted directly instead of wrapped
+                    // in a generated function. That keeps `return`, `break`,
+                    // and `continue` inside it bound to the enclosing closure
+                    // or loop. Inside a generated function the same jump would
+                    // exit that function instead, so the wrapper stays there.
+                    // An expression is a statement whenever it is not the
+                    // block's trailing value, with or without a semicolon:
+                    // conditionals and blocks are statements by nature.
+                    syn::Expr::If(if_expr) if !returns && !js.in_synthetic() => {
+                        Self::expr_if(if_expr, &mut value, js, names, true)?;
+                    }
+                    syn::Expr::Block(block) if !returns && !js.in_synthetic() => {
+                        Self::block(&block.block, &mut value, js, names, false)?;
+                    }
+                    _ => {
+                        Self::dispatch(expr, &mut value, js, names)?;
+                    }
+                }
 
                 if returns {
                     js.push(';');

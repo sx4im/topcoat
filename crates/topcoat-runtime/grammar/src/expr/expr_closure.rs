@@ -35,12 +35,18 @@ impl Expr {
         js.push_str(") => ");
 
         let mut body = TokenStream::new();
-        match &*closure.body {
+        // A closure body is a real function boundary, so jumps inside it
+        // belong to the closure even when the closure sits inside a
+        // generated function.
+        let saved = js.enter_function();
+        let lowered = match &*closure.body {
             // A block body maps directly onto the arrow function body without
             // the IIFE wrapper that a block expression would need.
-            SynExpr::Block(block) => Self::block(&block.block, &mut body, js, names)?,
-            other => Self::dispatch(other, &mut body, js, names)?,
-        }
+            SynExpr::Block(block) => Self::block(&block.block, &mut body, js, names, true),
+            other => Self::dispatch(other, &mut body, js, names),
+        };
+        js.exit_function(saved);
+        lowered?;
         names.pop_scope();
 
         let output = &closure.output;

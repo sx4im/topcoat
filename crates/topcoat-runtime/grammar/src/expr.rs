@@ -162,7 +162,7 @@ impl Expr {
             syn::Expr::Index(inner) => Self::expr_index(inner, rust, js, names)?,
             syn::Expr::Block(inner) => Self::expr_block(inner, rust, js, names)?,
             syn::Expr::Closure(inner) => Self::expr_closure(inner, rust, js, names)?,
-            syn::Expr::If(inner) => Self::expr_if(inner, rust, js, names)?,
+            syn::Expr::If(inner) => Self::expr_if(inner, rust, js, names, false)?,
             syn::Expr::Loop(inner) => Self::expr_loop(inner, rust, js, names)?,
             syn::Expr::While(inner) => Self::expr_while(inner, rust, js, names)?,
             syn::Expr::Continue(inner) => Self::expr_continue(inner, rust, js, names)?,
