@@ -9,12 +9,18 @@ use crate::expr::{
 };
 
 impl Expr {
+    /// Lowers one statement. `is_last` marks the block's trailing
+    /// statement, which is its Rust value; `js_value` marks whether that
+    /// value is also the JavaScript block's value. The two differ in
+    /// statement position, where the Rust value is kept but JavaScript must
+    /// not return it.
     pub(super) fn stmt(
         stmt: &Stmt,
         rust: &mut TokenStream,
         js: &mut Js,
         names: &mut NameResolver,
         is_last: bool,
+        js_value: bool,
     ) -> syn::Result<()> {
         match stmt {
             Stmt::Local(local) => {
@@ -40,15 +46,33 @@ impl Expr {
                 quote! { let #pat = #value; }.to_tokens(rust);
             }
             Stmt::Expr(expr, semi) => {
-                // A trailing expression (no semicolon) is the block's value, so
-                // it becomes the JavaScript `return`.
+                // A trailing expression (no semicolon) is the block's Rust
+                // value, so it becomes the JavaScript `return` when the
+                // block's JavaScript value is used. Any other expression
+                // statement discards its value: an `if` or bare block there
+                // lowers as a plain JavaScript statement instead of an IIFE,
+                // so `return`, `break`, and `continue` inside it reach the
+                // enclosing function or loop. Note an `if` statement normally
+                // carries no semicolon, so the test is whether its value is
+                // used, not the presence of a semicolon.
                 let returns = is_last && semi.is_none();
-                if returns {
+                let js_returns = js_value && returns;
+                if js_returns {
                     js.push_str("return ");
                 }
 
                 let mut value = TokenStream::new();
-                Self::dispatch(expr, &mut value, js, names)?;
+                if js_returns {
+                    Self::dispatch(expr, &mut value, js, names)?;
+                } else {
+                    match expr {
+                        syn::Expr::If(inner) => Self::expr_if_stmt(inner, &mut value, js, names)?,
+                        syn::Expr::Block(inner) => {
+                            Self::expr_block_stmt(inner, &mut value, js, names)?;
+                        }
+                        _ => Self::dispatch(expr, &mut value, js, names)?,
+                    }
+                }
 
                 if returns {
                     js.push(';');

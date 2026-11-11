@@ -25,4 +25,18 @@ impl Expr {
         js.push_str(if is_async { ")())" } else { ")()" });
         Ok(())
     }
+
+    /// Lowers a block used as a statement, where its value is discarded.
+    /// The block lowers as a plain JavaScript block instead of an IIFE, so
+    /// `return`, `break`, and `continue` inside it reach the enclosing
+    /// function or loop instead of exiting the generated function.
+    pub(super) fn expr_block_stmt(
+        block: &ExprBlock,
+        rust: &mut TokenStream,
+        js: &mut Js,
+        names: &mut NameResolver,
+    ) -> syn::Result<()> {
+        Self::block_stmt(&block.block, rust, js, names)?;
+        Ok(())
+    }
 }

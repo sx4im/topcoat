@@ -7,9 +7,11 @@ use super::js::Js;
 use crate::expr::{Expr, contains_await::ContainsAwait, name_resolver::NameResolver};
 
 impl Expr {
-    /// Lowers `if cond { ... } else { ... }`. The JavaScript side is wrapped
-    /// in an IIFE so the same shape works in both expression and statement
-    /// position. This expression can also hold async expressions.
+    /// Lowers `if cond { ... } else { ... }` in value position. The
+    /// JavaScript side is wrapped in an IIFE because JavaScript has no `if`
+    /// expression. This expression can also hold async expressions. An `if`
+    /// used as a statement lowers through `expr_if_stmt` instead, without
+    /// the wrapper.
     pub(super) fn expr_if(
         if_expr: &ExprIf,
         rust: &mut TokenStream,
@@ -23,8 +25,23 @@ impl Expr {
             "(() => "
         };
         js.push_str(predicate);
-        let rust_if = Self::expr_if_inner(if_expr, js, names)?;
+        let rust_if = Self::expr_if_inner(if_expr, js, names, false)?;
         js.push_str(if is_async { ")())" } else { ")()" });
+        rust_if.to_tokens(rust);
+        Ok(())
+    }
+
+    /// Lowers an `if` used as a statement, where its value is discarded.
+    /// The branches lower as plain JavaScript statements instead of an IIFE,
+    /// so `return`, `break`, and `continue` inside them reach the enclosing
+    /// function or loop instead of exiting the generated function.
+    pub(super) fn expr_if_stmt(
+        if_expr: &ExprIf,
+        rust: &mut TokenStream,
+        js: &mut Js,
+        names: &mut NameResolver,
+    ) -> syn::Result<()> {
+        let rust_if = Self::expr_if_inner(if_expr, js, names, true)?;
         rust_if.to_tokens(rust);
         Ok(())
     }
@@ -33,6 +50,7 @@ impl Expr {
         if_expr: &ExprIf,
         js: &mut Js,
         names: &mut NameResolver,
+        stmt_mode: bool,
     ) -> syn::Result<TokenStream> {
         js.push_str("{ if (");
         let mut cond = TokenStream::new();
@@ -40,18 +58,26 @@ impl Expr {
         js.push_str(".dehydrate()) ");
 
         let mut then_tokens = TokenStream::new();
-        Self::block(&if_expr.then_branch, &mut then_tokens, js, names)?;
+        if stmt_mode {
+            Self::block_stmt(&if_expr.then_branch, &mut then_tokens, js, names)?;
+        } else {
+            Self::block(&if_expr.then_branch, &mut then_tokens, js, names)?;
+        }
 
         let mut else_tokens = TokenStream::new();
         let else_kw = if let Some((else_token, else_branch)) = &if_expr.else_branch {
             js.push_str(" else ");
             match &**else_branch {
                 SynExpr::If(inner) => {
-                    let inner_rust = Self::expr_if_inner(inner, js, names)?;
+                    let inner_rust = Self::expr_if_inner(inner, js, names, stmt_mode)?;
                     inner_rust.to_tokens(&mut else_tokens);
                 }
                 SynExpr::Block(block) => {
-                    Self::block(&block.block, &mut else_tokens, js, names)?;
+                    if stmt_mode {
+                        Self::block_stmt(&block.block, &mut else_tokens, js, names)?;
+                    } else {
+                        Self::block(&block.block, &mut else_tokens, js, names)?;
+                    }
                 }
                 other => {
                     return Err(syn::Error::new_spanned(other, "unsupported else branch"));

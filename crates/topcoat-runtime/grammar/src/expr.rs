@@ -240,4 +240,64 @@ mod tests {
             assert!(syn::parse_str::<Expr>(source).is_err(), "{source}");
         }
     }
+
+    #[test]
+    fn early_return_inside_if_statement_reaches_the_closure() {
+        // An `if` used as a statement discards its value, so it needs no
+        // IIFE wrapper. Wrapping it swallows a `return` inside the branch:
+        // the return exits the generated function instead of the closure.
+        // Both the sync `(() =>` and async `(await (async () =>` wrappers
+        // must be gone, so cover an await in the condition and in the branch.
+        for source in [
+            "async |_e| { if true { return; } 1.0 }",
+            "async |_e| { if true { return 1.0; } 2.0 }",
+            "async |_e| { if ready.await { return; } 1.0 }",
+            "async |_e| { if true { let value = ready.await; return; } 1.0 }",
+            // A nested `if` statement is the trailing statement of its
+            // branch block, but the branch value is discarded, so it still
+            // lowers as a plain statement.
+            "async |_e| { if true { if true { return; } } 1.0 }",
+        ] {
+            let expr: Expr = syn::parse_str(source).unwrap();
+            let tokens = expr.expr_to_tokens().unwrap().to_string();
+            assert!(
+                !tokens.contains("(await (async ()") && !tokens.contains("(() =>"),
+                "statement if must not be wrapped in an IIFE: {source}\n{tokens}"
+            );
+            assert!(tokens.contains("return"), "{source}\n{tokens}");
+        }
+    }
+
+    #[test]
+    fn early_return_inside_block_statement_reaches_the_closure() {
+        // Same shape for a bare block used as a statement.
+        for source in [
+            "async |_e| { { return; } 1.0 }",
+            "async |_e| { { let value = ready.await; return; } 1.0 }",
+        ] {
+            let expr: Expr = syn::parse_str(source).unwrap();
+            let tokens = expr.expr_to_tokens().unwrap().to_string();
+            assert!(
+                !tokens.contains("(await (async ()") && !tokens.contains("(() =>"),
+                "statement block must not be wrapped in an IIFE: {source}\n{tokens}"
+            );
+            assert!(tokens.contains("return"), "{tokens}");
+        }
+    }
+
+    #[test]
+    fn if_in_value_position_keeps_the_iife() {
+        // The wrapper is still needed where the `if` produces a value.
+        for source in [
+            "if true { 1.0 } else { 2.0 }",
+            "async |_e| { let value = if true { 1.0 } else { 2.0 }; value }",
+        ] {
+            let expr: Expr = syn::parse_str(source).unwrap();
+            let tokens = expr.expr_to_tokens().unwrap().to_string();
+            assert!(
+                tokens.contains("(await (async ()") || tokens.contains("(() =>"),
+                "value-position if keeps its IIFE: {source}\n{tokens}"
+            );
+        }
+    }
 }

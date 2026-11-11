@@ -54,3 +54,59 @@ fn bounded_loops() {
         3.0
     });
 }
+
+#[test]
+fn jumps_inside_if_statement() {
+    // An `if` used as a statement lowers as a plain JavaScript statement,
+    // so a jump inside it reaches the enclosing function or loop.
+    coherent!({
+        if true {
+            return 1.0;
+        }
+        2.0
+    });
+    coherent!({
+        if true {
+            if true {
+                return 1.0;
+            }
+        }
+        2.0
+    });
+    coherent!({
+        loop {
+            if true {
+                break;
+            }
+            break;
+        }
+        3.0
+    });
+    coherent!({
+        while true {
+            if true {
+                break;
+            }
+            break;
+        }
+        3.0
+    });
+    coherent!({
+        loop {
+            if false {
+                continue;
+            }
+            break;
+        }
+        3.0
+    });
+    coherent!({
+        while true {
+            if false {
+                continue;
+            }
+            break;
+        }
+        3.0
+    });
+}

@@ -184,7 +184,7 @@ async fn test_procedure(cx: &Cx, v: String) -> Result<String, std::convert::Infa
 }
 
 #[tokio::test]
-async fn procedure_call_inside_if_is_an_async_func() {
+async fn procedure_call_inside_if_statement_is_awaited() {
     let cx = &Cx::new();
     let html = view! {
         <button
@@ -192,6 +192,7 @@ async fn procedure_call_inside_if_is_an_async_func() {
                 if true {
                     let _v = test_procedure("hello test".to_owned()).await;
                 }
+                let _w = test_procedure("after".to_owned()).await;
             })
         >
             "Test"
@@ -202,14 +203,20 @@ async fn procedure_call_inside_if_is_an_async_func() {
     .unwrap()
     .render(cx);
 
+    // The `if` is a statement, so it lowers as a plain JavaScript statement
+    // and the await inside it runs in the handler directly.
     assert!(
-        html.contains("(await (async ()"),
-        "if block containing an await must be an async anonymous function: {html}"
+        html.contains("if (cx.hydrate(true).dehydrate())"),
+        "if statement keeps its condition: {html}"
+    );
+    assert!(
+        !html.contains("(await (async ()"),
+        "if statement must not be wrapped in an anonymous function: {html}"
     );
 }
 
 #[tokio::test]
-async fn procedure_call_inside_block_is_an_async_func() {
+async fn procedure_call_inside_block_statement_is_awaited() {
     let cx = &Cx::new();
     let html = view! {
         <button
@@ -217,6 +224,7 @@ async fn procedure_call_inside_block_is_an_async_func() {
                 {
                     let _v = test_procedure("hello test".to_owned()).await;
                 }
+                let _w = test_procedure("after".to_owned()).await;
             })
         >
             "Test"
@@ -227,10 +235,52 @@ async fn procedure_call_inside_block_is_an_async_func() {
     .unwrap()
     .render(cx);
 
+    // The block is a statement, so it lowers as a plain JavaScript block and
+    // the await inside it runs in the handler directly.
     assert!(
-        html.contains("(await (async ()"),
-        "block containing an await must be an async anonymous function: {html}"
+        html.contains("hello test"),
+        "block statement keeps the procedure call: {html}"
     );
+    assert!(
+        !html.contains("(await (async ()"),
+        "block statement must not be wrapped in an anonymous function: {html}"
+    );
+}
+
+#[tokio::test]
+async fn early_return_inside_if_statement_exits_the_handler() {
+    let cx = &Cx::new();
+    let html = view! {
+        <button
+            @click=$(async |_e| {
+                if true {
+                    let _v = test_procedure("hello test".to_owned()).await;
+                    return;
+                }
+                let _w = test_procedure("after".to_owned()).await;
+            })
+        >
+            "Test"
+        </button>
+    }
+    .single()
+    .await
+    .unwrap()
+    .render(cx);
+
+    // The `return` must exit the handler, not the `if`'s generated function,
+    // so the call after the `if` follows it in the handler source.
+    assert!(
+        !html.contains("(await (async ()"),
+        "if statement must not be wrapped in an anonymous function: {html}"
+    );
+    let if_at = html.find("if (cx.hydrate(true).dehydrate())").expect(&html);
+    let first_call = html.find("hello test").expect(&html);
+    let early_return = html.find("return;").expect(&html);
+    let second_call = html.find("after").expect(&html);
+    assert!(if_at < first_call, "{html}");
+    assert!(first_call < early_return, "{html}");
+    assert!(early_return < second_call, "{html}");
 }
 
 /// `push_str` takes anything that dereferences to a string, so it accepts the
